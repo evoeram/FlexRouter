@@ -2,7 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO.Ports;
 using System.Linq;
+using System.Management;
+using System.Text.RegularExpressions;
 using System.Threading;
 using FlexRouter.Hardware.HardwareEvents;
 using FlexRouter.Hardware.Helpers;
@@ -73,6 +76,17 @@ namespace FlexRouter.Hardware.Arcc
             }
         }
 
+        /// <summary>
+        /// USB VID/PID устройств, которые определяются как ARCC-совместимые железки.
+        /// VID_303A - Espressif ESP32-S3/C6 (нативный USB-CDC, TinyUSB).
+        /// VID_1A86&PID_55D3 - мост WCH CH343 (стоит на девкитах ESP32-S3).
+        /// </summary>
+        private static readonly Regex[] CompatibleUsbIds = new[]
+        {
+            new Regex(@"VID_303A", RegexOptions.IgnoreCase),
+            new Regex(@"VID_1A86&PID_55D3", RegexOptions.IgnoreCase),
+        };
+
         public override bool Connect()
         {
             var foundDevices = new Dictionary<string, ArccDevice>();
@@ -83,11 +97,11 @@ namespace FlexRouter.Hardware.Arcc
 
                 var ftStatus = myFtdiDevice.GetNumberOfDevices(ref ftdiDeviceCount);
                 if (ftStatus != FTDI.FT_STATUS.FT_OK)
-                    return false;
+                    return FindAndConnectCompatibleDevices(foundDevices);
                 var ftdiDeviceList = new FTDI.FT_DEVICE_INFO_NODE[ftdiDeviceCount];
                 ftStatus = myFtdiDevice.GetDeviceList(ftdiDeviceList);
                 if (ftStatus != FTDI.FT_STATUS.FT_OK)
-                    return false;
+                    return FindAndConnectCompatibleDevices(foundDevices);
 
                 for (var i = 0; i < ftdiDeviceList.Length; i++)
                 {
@@ -114,7 +128,24 @@ namespace FlexRouter.Hardware.Arcc
             }
             catch (Exception)
             {
-                return false;
+                return FindAndConnectCompatibleDevices(foundDevices);
+            }
+            // Поиск ARCC-совместимых устройств на нативном USB / CH343 (ESP32 и т.п.)
+            return FindAndConnectCompatibleDevices(foundDevices);
+        }
+
+        /// <summary>
+        /// Добавить к найденным FTDI-устройствам ARCC-совместимые USB-COM устройства (ESP32 и т.п.)
+        /// и подключиться ко всем найденным
+        /// </summary>
+        private bool FindAndConnectCompatibleDevices(Dictionary<string, ArccDevice> foundDevices)
+        {
+            foreach (var usbDevice in FindCompatibleUsbSerialDevices())
+            {
+                if (foundDevices.ContainsKey(usbDevice.Key))
+                    continue;
+                var device = new ArccDevice(usbDevice.Key, usbDevice.Value);
+                foundDevices.Add(usbDevice.Key, device);
             }
             foreach (var arccDevice in foundDevices)
             {
@@ -122,6 +153,56 @@ namespace FlexRouter.Hardware.Arcc
                     Devices.Add(arccDevice.Key, arccDevice.Value);
             }
             return true;
+        }
+
+        /// <summary>
+        /// Найти все USB-COM устройства, чей USB DeviceID совпадает с одним из CompatibleUsbIds.
+        /// Ключ - стабильный идентификатор устройства (из PNPDeviceID), значение - имя COM-порта
+        /// </summary>
+        private static Dictionary<string, string> FindCompatibleUsbSerialDevices()
+        {
+            var result = new Dictionary<string, string>();
+            try
+            {
+                var existingPorts = SerialPort.GetPortNames();
+                if (existingPorts.Length == 0)
+                    return result;
+                using (var searcher = new ManagementObjectSearcher(
+                    "SELECT Name, DeviceID, PNPDeviceID FROM Win32_PnPEntity WHERE PNPClass='Ports'"))
+                using (var collection = searcher.Get())
+                {
+                    foreach (var o in collection)
+                    {
+                        using (var entity = (ManagementObject)o)
+                        {
+                            var pnpDeviceId = Convert.ToString(entity["PNPDeviceID"]);
+                            var deviceName = Convert.ToString(entity["DeviceID"]);
+                            if (string.IsNullOrEmpty(pnpDeviceId) || string.IsNullOrEmpty(deviceName))
+                                continue;
+                            if (!CompatibleUsbIds.Any(r => r.IsMatch(pnpDeviceId)))
+                                continue;
+                            // Имя порта берём из Name вида "... (COM5)"
+                            var name = Convert.ToString(entity["Name"]);
+                            var match = Regex.Match(name ?? "", @"\((COM\d+)\)\s*$", RegexOptions.IgnoreCase);
+                            if (!match.Success)
+                                continue;
+                            var comPort = match.Groups[1].Value;
+                            if (!existingPorts.Contains(comPort, StringComparer.OrdinalIgnoreCase))
+                                continue;
+                            // Убираем &MI_XX (номер интерфейса композитного устройства) - он может меняться
+                            var stableId = Regex.Replace(pnpDeviceId, @"&MI_\d+", "").Replace('\\', '_');
+                            var id = DevicePrefix + ":USB_" + stableId;
+                            if (!result.ContainsKey(id))
+                                result.Add(id, comPort);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Print("ARCC USB scan failed: " + ex.Message);
+            }
+            return result;
         }
         #region Методы доработаны для реализации контролируемого дампа железа Arcc
         /// <summary>

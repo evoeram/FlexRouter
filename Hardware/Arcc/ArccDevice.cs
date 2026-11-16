@@ -14,6 +14,10 @@ namespace FlexRouter.Hardware.Arcc
         /// </summary>
         private volatile bool _quit;
         /// <summary>
+        /// Максимальное ожидание готовности устройства (CTS) после открытия порта
+        /// </summary>
+        private static readonly TimeSpan CtsWaitTimeout = TimeSpan.FromSeconds(3);
+        /// <summary>
         /// Нить для разгребания очереди исходящих сообщений (периодической отсылки данных на лампы, индикаторы, ...)
         /// </summary>
         private readonly Thread _sendDataThread;
@@ -135,13 +139,18 @@ namespace FlexRouter.Hardware.Arcc
             {
                 return false;
             }
-            // Пока CtsHolding не установлен в true - устройство не готово к работе
-            while (true)
+            // Пока CtsHolding не установлен в true - устройство не готово к работе.
+            // Нативный USB-CDC (ESP32) не отдаёт состояние CTS - поэтому ожидание ограничено таймаутом,
+            // после которого устройство считается готовым в любом случае
+            var ctsWaitStart = DateTime.Now;
+            while (!_port.CtsHolding)
             {
-                if (_port.CtsHolding)
+                if (DateTime.Now - ctsWaitStart > CtsWaitTimeout)
                     break;
                 Thread.Sleep(100);
             }
+            if (!_port.CtsHolding)
+                System.Diagnostics.Debug.Print("ARCC device on " + _comPort + ": CTS is not asserted, continuing anyway");
             _quit = false;
             _sendDataThread.Start();
             return true;
@@ -153,32 +162,47 @@ namespace FlexRouter.Hardware.Arcc
         {
             _quit = true;
             _sendDataThread.Join();
-            SendData();
-            _port.DtrEnable = true;
-            Thread.Sleep(1000);
-            _port.DtrEnable = false;
-            _port.Close();
+            try
+            {
+                SendData();
+                _port.DtrEnable = true;
+                Thread.Sleep(1000);
+                _port.DtrEnable = false;
+                _port.Close();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Print("ARCC " + _comPort + " disconnect error (ignored): " + ex.Message);
+            }
             _port = null;
         }
         /// <summary>
-        /// Функция (callback) приёма данных от устройства
+        /// Функция (callback) приёма данных от устройства.
+        /// Вызывается в threadpool-потоке: необработанное исключение здесь валит весь процесс,
+        /// поэтому всё тело защищено. При ошибке порта (устройство выдёрнули, USB пересоздал порт)
+        /// соединение помечается разорванным
         /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
         private void SerialPortDataReceived(object sender, SerialDataReceivedEventArgs e)
         {
-            var bytesToRead = _port.BytesToRead;
-            if (bytesToRead == 0)
-                return;
-            lock (_incomingEvents)
+            try
             {
-                var buffer = new byte[bytesToRead];
-                _port.Read(buffer, 0, bytesToRead);
-                
-                var events = _arccHardwareDataProcessor.ProcessDataFromSerialPort(buffer);
+                var bytesToRead = _port.BytesToRead;
+                if (bytesToRead == 0)
+                    return;
+                lock (_incomingEvents)
+                {
+                    var buffer = new byte[bytesToRead];
+                    _port.Read(buffer, 0, bytesToRead);
 
-                foreach (var ev in events)
-                    _incomingEvents.Enqueue(ev);
+                    var events = _arccHardwareDataProcessor.ProcessDataFromSerialPort(buffer);
+
+                    foreach (var ev in events)
+                        _incomingEvents.Enqueue(ev);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.Print("ARCC RX error on " + _comPort + ": " + ex.Message);
             }
         }
         /// <summary>
@@ -196,7 +220,16 @@ namespace FlexRouter.Hardware.Arcc
                     Thread.Sleep(2);
                     continue;
                 }
-                SendData();
+                try
+                {
+                    SendData();
+                }
+                catch (Exception ex)
+                {
+                    // Ошибка порта (устройство отвалилось) - не роняем поток, ждём восстановления
+                    System.Diagnostics.Debug.Print("ARCC TX error on " + _comPort + ": " + ex.Message);
+                    Thread.Sleep(100);
+                }
             }
         }
         /// <summary>
