@@ -86,13 +86,14 @@ changes.txt                   история изменений
   VS Build Tools;
 - **.NET Framework 4.5** — рантайм и *targeting pack* (reference assemblies).
 
-Зависимости (уже лежат в `Addons\`):
+Зависимости (лежат в `Addons\`, при сборке копируются в каталог вывода):
 
-- `SlimDX.dll` 4.0.13.43 (DirectInput/Direct3D);
+- `SlimDX.dll` 4.0.13.43 (DirectInput/Direct3D) — mixed-mode-сборка, требует нативный
+  рантайм VC++ 2010: `MSVCR100.dll`/`MSVCP100.dll` (x86) лежат в `Addons\` и копируются
+  вместе с ней (иначе SlimDX не загрузится: «Не найден указанный модуль»);
 - `FTChipIDNet.dll`, `FTD2XX_NET.dll` + нативные `FTChipID.dll`, `ftd2xx.dll`
   (определение ARCC по FTDI-чипу);
-- `f3io.dll` — **в репозитории нет**, ставится из SDK платы F3/L3 (нужна только для работы
-  с платой F3; для сборки достаточно описанных P/Invoke-объявлений).
+- `f3io.dll` (SDK платы F3/L3; нужна только для работы с платой F3).
 
 Через Visual Studio: открыть `FlexRouter.sln` → *Build*.
 
@@ -114,7 +115,9 @@ msbuild FlexRouter.sln /p:Configuration=Release
 >   /p:TargetFrameworkRootPath="<путь>\net45ra\build\"
 > ```
 
-Результат: `bin\Release\FlexRouter.exe` (x86).
+Результат: `bin\Release\FlexRouter.exe` (x86). В каталоге `bin\Release` рядом с exe
+оказываются все необходимые dll (SlimDX, FTDI, f3io) — запускайте exe оттуда или копируйте
+вместе со всем содержимым каталога.
 
 ## Запуск
 
