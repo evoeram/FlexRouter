@@ -17,9 +17,28 @@ namespace FlexRouter.Hardware.Keyboard
         {
         }
 
+        private bool _enabled = true;
+
+        /// <summary>
+        /// Включить/выключить клавиатуры (галочка в Settings).
+        /// При выключении подключенные клавиатуры отключаются, при включении - ищутся заново
+        /// </summary>
+        public void SetEnabled(bool enabled)
+        {
+            if (_enabled == enabled)
+                return;
+            _enabled = enabled;
+            if (enabled)
+                Connect();
+            else
+                Disconnect();
+        }
+
         public override bool Connect()
         {
             Disconnect();
+            if (!_enabled)
+                return true;
             try
             {
                 // Find all the GameControl devices that are attached.

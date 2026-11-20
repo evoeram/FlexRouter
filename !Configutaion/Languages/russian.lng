@@ -202,4 +202,8 @@
   <Phrase Name="MapFileUISelectCsvFileToSave" Value = "Выберите, пожалуйста, .csv файл для сохранения"/>
   <Phrase Name="MapFileUIModeInitializeVarNames" Value = "Связать переменные с .map файлов"/>
   <Phrase Name="MapFileUIModeUpdateVarOffsets" Value = "Обновить смещения из .map файла"/>
+  <Phrase Name="SettingsArccUsbDevice" Value="Устройство ARCC по USB (CDC/FTDI)" />
+  <Phrase Name="SettingsArccNetDevice" Value="Устройство ARCC по сети (TCP)" />
+  <Phrase Name="SettingsKeyboardDevice" Value="Клавиатура (DirectInput)" />
+  <Phrase Name="CommonSearchHint" Value="Поиск по всем вкладкам (Enter - следующее, Ctrl+F - фокус, Esc - очистить)" />
 </FlexRouterProfile>

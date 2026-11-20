@@ -1,9 +1,20 @@
 ﻿<Window x:Class="FlexRouter.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="FlexRouter" Height="650" Width="800" Closing="WindowClosing">
+        Title="FlexRouter" Height="650" Width="800" Closing="WindowClosing" PreviewKeyDown="WindowPreviewKeyDown">
     <Grid>
-        <TabControl HorizontalAlignment="Stretch" Name="tabControl1" VerticalAlignment="Stretch" IsHitTestVisible="True" Margin="12,12,12,17" VerticalContentAlignment="Top" Cursor="Arrow" SelectedIndex="-1">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <DockPanel Grid.Row="0" Margin="12,10,12,2" LastChildFill="True">
+            <Button x:Name="_searchClear" Content="&#10005;" Width="23" DockPanel.Dock="Right" Margin="4,0,0,0" Click="SearchClearClick" Visibility="Collapsed" ToolTip="Очистить поиск (Esc)"/>
+            <Grid>
+                <TextBox x:Name="_searchBox" Height="23" VerticalContentAlignment="Center" TextChanged="SearchBoxTextChanged" PreviewKeyDown="SearchBoxKeyDown"/>
+                <TextBlock x:Name="_searchHint" Text="Поиск..." IsHitTestVisible="False" VerticalAlignment="Center" Margin="6,0,0,0" Foreground="Gray"/>
+            </Grid>
+        </DockPanel>
+        <TabControl Grid.Row="1" HorizontalAlignment="Stretch" Name="tabControl1" VerticalAlignment="Stretch" IsHitTestVisible="True" Margin="12,6,12,17" VerticalContentAlignment="Top" Cursor="Arrow" SelectedIndex="-1">
             <TabItem Header="Info" Name="tabInformation">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -119,13 +130,19 @@
                     <CheckBox x:Name="_joystickBindByInstanceGuid" Content="" Grid.Column="1" Margin="0,206,10,0" HorizontalAlignment="Right"  VerticalAlignment="Top" Checked="_joystickBindByInstanceGuid_Checked" Unchecked="_joystickBindByInstanceGuid_Unchecked"/>
                     <Label x:Name="_disablePersonalProfileLabel" Content="DisablePersonalProfile" Grid.Column="1" HorizontalAlignment="Left"  VerticalAlignment="Top" Margin="5,214,0,0"/>
                     <CheckBox x:Name="_disablePersonalProfile" Content="" Grid.Column="1" Margin="0,226,10,0" HorizontalAlignment="Right"  VerticalAlignment="Top" Checked="_disablePersonalProfile_Checked" Unchecked="_disablePersonalProfile_Unchecked"/>
+                    <Label x:Name="_arccUsbLabel" Content="ArccUsbDevice" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5,245,0,0"/>
+                    <CheckBox x:Name="_arccUsbEnabled" Content="" Grid.Column="1" Margin="0,255,10,0" HorizontalAlignment="Right" VerticalAlignment="Top" Checked="ArccUsbEnabledChecked" Unchecked="ArccUsbEnabledUnchecked"/>
+                    <Label x:Name="_arccNetLabel" Content="ArccNetDevice" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5,264,0,0"/>
+                    <CheckBox x:Name="_arccNetEnabled" Content="" Grid.Column="1" Margin="0,274,10,0" HorizontalAlignment="Right" VerticalAlignment="Top" Checked="ArccNetEnabledChecked" Unchecked="ArccNetEnabledUnchecked"/>
+                    <Label x:Name="_keyboardLabel" Content="KeyboardDevice" Grid.Column="1" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="5,283,0,0"/>
+                    <CheckBox x:Name="_keyboardEnabled" Content="" Grid.Column="1" Margin="0,293,10,0" HorizontalAlignment="Right" VerticalAlignment="Top" Checked="KeyboardEnabledChecked" Unchecked="KeyboardEnabledUnchecked"/>
                     <Button x:Name="_createNewProfile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="Create" Grid.Column="1" Margin="0,95,10,0" Click="CreateNewProfileClick" Width="115"/>
                     <Button x:Name="_removeProfile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="Remove" Grid.Column="1" Margin="0,122,10,0" Click="RemoveProfileClick" Width="115"/>
                     <Button x:Name="_renameProfile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="Rename" Grid.Column="1" Margin="0,149,10,0" Click="RenameProfileClick" Width="115"/>
                     <Button x:Name="_mergePersonalAndPublicProfile" HorizontalAlignment="Left" VerticalAlignment="Top" Content="Merge personal and public" Grid.Column="1" Margin="17,149,0,0" Width="250" Click="_mergePersonalAndPublicProfile_Click"/>
-                    <GroupBox x:Name="_mapFileGroup" Grid.Column="1" Header="GroupBox" HorizontalAlignment="Left" Height="100" Margin="10,277,0,0" VerticalAlignment="Top" Width="737"/>
-                    <Button x:Name="_initializeVarNamesFromMapFile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="init from map" Grid.Column="1" Margin="0,301,20,0" Width="115" RenderTransformOrigin="-0.53,-1.35" Click="_initializeVarNamesFromMapFile_Click"/>
-                    <Button x:Name="_updateVarOffsetsFromMapFile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="update from map" Grid.Column="1" Margin="0,347,20,0"  Width="115" RenderTransformOrigin="-0.53,-1.35" Click="_updateVarOffsetsFromMapFile_Click"/>
+                    <GroupBox x:Name="_mapFileGroup" Grid.Column="1" Header="GroupBox" HorizontalAlignment="Left" Height="100" Margin="10,313,0,0" VerticalAlignment="Top" Width="737"/>
+                    <Button x:Name="_initializeVarNamesFromMapFile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="init from map" Grid.Column="1" Margin="0,337,20,0" Width="115" RenderTransformOrigin="-0.53,-1.35" Click="_initializeVarNamesFromMapFile_Click"/>
+                    <Button x:Name="_updateVarOffsetsFromMapFile" HorizontalAlignment="Right" VerticalAlignment="Top" Content="update from map" Grid.Column="1" Margin="0,383,20,0"  Width="115" RenderTransformOrigin="-0.53,-1.35" Click="_updateVarOffsetsFromMapFile_Click"/>
                 </Grid>
             </TabItem>
         </TabControl>

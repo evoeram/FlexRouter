@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <FlexRouterProfile Type="Language" Name="English">
   <Phrase Name="MainFormName" Value = "FlexRouter"/>
 
@@ -204,4 +204,8 @@
   <Phrase Name="MapFileUISelectCsvFileToSave" Value = "Please select .csv file to save"/>
   <Phrase Name="MapFileUIModeInitializeVarNames" Value = "Initialize variables name from .map file"/>
   <Phrase Name="MapFileUIModeUpdateVarOffsets" Value = "Update variables offset from .map file"/>
+  <Phrase Name="SettingsArccUsbDevice" Value="ARCC device over USB (CDC/FTDI)" />
+  <Phrase Name="SettingsArccNetDevice" Value="ARCC device over network (TCP)" />
+  <Phrase Name="SettingsKeyboardDevice" Value="Keyboard (DirectInput)" />
+  <Phrase Name="CommonSearchHint" Value="Search in all tabs (Enter - next, Ctrl+F - focus, Esc - clear)" />
 </FlexRouterProfile>

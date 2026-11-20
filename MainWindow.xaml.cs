@@ -69,6 +69,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FlexRouter.AccessDescriptors;
@@ -151,6 +152,9 @@ namespace FlexRouter
             _turnControlsSynchronizationOff.IsChecked = ApplicationSettings.ControlsSynchronizationIsOff;
             _joystickBindByInstanceGuid.IsChecked = ApplicationSettings.JoystickBindByInstanceGuid;
             _disablePersonalProfile.IsChecked = ApplicationSettings.DisablePersonalProfile;
+            _arccUsbEnabled.IsChecked = ApplicationSettings.ArccUsbEnabled;
+            _arccNetEnabled.IsChecked = ApplicationSettings.ArccNetEnabled;
+            _keyboardEnabled.IsChecked = ApplicationSettings.KeyboardEnabled;
 
             InitializeCalculator();
 
@@ -182,6 +186,7 @@ namespace FlexRouter
                 foreach (var s in problems)
                     _statusList.Items.Add(CreateListViewItem(s.IsFixed ? s.Name : s.Name + " - " + s.Description,
                         s.IsFixed ? Properties.Resources.Ok : Properties.Resources.Fail));
+                ApplySearchFilter(false);
             }
         }
         /// <summary>
@@ -250,6 +255,10 @@ namespace FlexRouter
             _profileManagementGroup.Header = LanguageManager.GetPhrase(Phrases.CommonProfileManagement);
             _turnControlsSynchronizationOffLabel.Content = LanguageManager.GetPhrase(Phrases.SettingsTurnControlsSynchronizationOff);
             _joystickBindByInstanceGuidLabel.Content = LanguageManager.GetPhrase(Phrases.SettingsJoystickBindByInstanceGuid);
+            _arccUsbLabel.Content = LanguageManager.GetPhrase(Phrases.SettingsArccUsbDevice);
+            _arccNetLabel.Content = LanguageManager.GetPhrase(Phrases.SettingsArccNetDevice);
+            _keyboardLabel.Content = LanguageManager.GetPhrase(Phrases.SettingsKeyboardDevice);
+            _searchHint.Text = LanguageManager.GetPhrase(Phrases.CommonSearchHint);
             _dump.Content = LanguageManager.GetPhrase(Phrases.CommonDumpControls);
             _varAndPanelNameToClipboard.Content = LanguageManager.GetPhrase(Phrases.EditorVariableAndPanelNameToClipboard);
             _cloneAccessDescriptor.Content = LanguageManager.GetPhrase(Phrases.EditorCloneAccessDescriptor);
@@ -531,6 +540,156 @@ namespace FlexRouter
             }
         }
 
+        #endregion
+
+        #region Поиск по всем вкладкам
+        private readonly List<TreeViewItem> _searchMatches = new List<TreeViewItem>();
+        private int _searchMatchIndex = -1;
+
+        private void SearchBoxTextChanged(object sender, TextChangedEventArgs e)
+        {
+            _searchHint.Visibility = _searchBox.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+            _searchClear.Visibility = _searchBox.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+            ApplySearchFilter(true);
+        }
+
+        private void SearchBoxKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                _searchBox.Text = string.Empty;
+                e.Handled = true;
+            }
+            else if (e.Key == Key.Enter)
+            {
+                SelectNextSearchMatch();
+                e.Handled = true;
+            }
+        }
+
+        private void SearchClearClick(object sender, RoutedEventArgs e)
+        {
+            _searchBox.Text = string.Empty;
+            _searchBox.Focus();
+        }
+
+        private void WindowPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.F && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+            {
+                _searchBox.Focus();
+                _searchBox.SelectAll();
+                e.Handled = true;
+            }
+        }
+
+        /// <summary>
+        /// Применить поисковый фильтр: к деревьям всех вкладок (AccessDescriptors, Variables,
+        /// ControlProcessors, FormulaEditor) и к спискам вкладки Info.
+        /// selectFirstMatch - выделить первое совпадение (при вводе текста); при повторном
+        /// применении после перестройки деревьев выделение не трогаем
+        /// </summary>
+        private void ApplySearchFilter(bool selectFirstMatch)
+        {
+            if (_searchBox == null)
+                return;
+            var filter = _searchBox.Text.Trim();
+            _searchMatches.Clear();
+            _searchMatchIndex = -1;
+            foreach (var tree in new[] { _accessDescriptorsTree, _variablesTree, _controlProcessorsTree, _variablesForFormulaTree })
+                foreach (TreeViewItem root in tree.Items)
+                    FilterTreeItem(root, filter);
+            ApplyItemsFilter(ConnectedDevicesList, filter);
+            ApplyItemsFilter(_statusList, filter);
+            if (selectFirstMatch && _searchMatches.Count > 0)
+                SelectSearchMatch(0);
+        }
+
+        /// <summary>Рекурсивная фильтрация узла дерева. Возвращает true, если узел или его потомки подходят</summary>
+        private bool FilterTreeItem(TreeViewItem item, string filter)
+        {
+            var childMatch = false;
+            foreach (TreeViewItem child in item.Items)
+                childMatch = FilterTreeItem(child, filter) || childMatch;
+
+            var text = GetTreeItemText(item) ?? string.Empty;
+            var selfMatch = string.IsNullOrEmpty(filter) || text.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+            item.Visibility = selfMatch || childMatch ? Visibility.Visible : Visibility.Collapsed;
+            if (selfMatch && !string.IsNullOrEmpty(filter))
+                ShowSubtree(item);          // узел подошёл сам - показываем всё его поддерево как контекст
+            else if (childMatch)
+                item.IsExpanded = true;     // подошли потомки - раскрываем, чтобы их было видно
+            if (selfMatch && !string.IsNullOrEmpty(filter) && item.Name != TreeItemType.Panel.ToString())
+                _searchMatches.Add(item);
+            return selfMatch || childMatch;
+        }
+
+        private static void ShowSubtree(TreeViewItem item)
+        {
+            foreach (TreeViewItem child in item.Items)
+            {
+                child.Visibility = Visibility.Visible;
+                ShowSubtree(child);
+            }
+        }
+
+        /// <summary>Фильтрация простого списка (строки/ListViewItem на вкладке Info) по вхождению подстроки</summary>
+        private static void ApplyItemsFilter(ItemsControl list, string filter)
+        {
+            if (list == null)
+                return;
+            foreach (var item in list.Items)
+            {
+                var container = list.ItemContainerGenerator.ContainerFromItem(item) as FrameworkElement;
+                if (container == null)
+                    continue;
+                var lvi = item as ListViewItem;
+                var text = item as string ?? (lvi != null && lvi.Content is string ? (string)lvi.Content : item != null ? item.ToString() : string.Empty);
+                container.Visibility = string.IsNullOrEmpty(filter) || text.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0
+                    ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
+        private void SelectNextSearchMatch()
+        {
+            if (_searchMatches.Count == 0)
+                return;
+            SelectSearchMatch(_searchMatchIndex + 1);
+        }
+
+        /// <summary>Выделить совпадение: перейти на его вкладку, раскрыть родителей, прокрутить к узлу</summary>
+        private void SelectSearchMatch(int index)
+        {
+            if (_searchMatches.Count == 0)
+                return;
+            _searchMatchIndex = ((index % _searchMatches.Count) + _searchMatches.Count) % _searchMatches.Count;
+            var item = _searchMatches[_searchMatchIndex];
+            var parent = item.Parent as TreeViewItem;
+            while (parent != null)
+            {
+                parent.IsExpanded = true;
+                parent = parent.Parent as TreeViewItem;
+            }
+            var tab = FindParentTab(item);
+            if (tab != null)
+                tab.IsSelected = true;
+            item.IsSelected = true;
+            item.BringIntoView();
+        }
+
+        private static TabItem FindParentTab(DependencyObject element)
+        {
+            var current = element;
+            while (current != null)
+            {
+                var tabItem = current as TabItem;
+                if (tabItem != null)
+                    return tabItem;
+                current = LogicalTreeHelper.GetParent(current)
+                          ?? (current is Visual || current is System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(current) : null);
+            }
+            return null;
+        }
         #endregion
 
         #region VariableEditor
@@ -978,6 +1137,7 @@ namespace FlexRouter
             ShowTree(_controlProcessorsTree, TreeItemType.ControlProcessor);
             ShowVariablesTree(_variablesForFormulaTree);
             System.Diagnostics.Debug.Print("EndTree: {0}", DateTime.Now);
+            ApplySearchFilter(false);
         }
         private void RenewVariablesTrees()
         {
@@ -985,6 +1145,7 @@ namespace FlexRouter
             ShowVariablesTree(_variablesTree);
             ShowVariablesTree(_variablesForFormulaTree);
             System.Diagnostics.Debug.Print("EndVarTree: {0}", DateTime.Now);
+            ApplySearchFilter(false);
         }
         private static void ShowTree(TreeView tree, TreeItemType tit)
         {
@@ -1662,6 +1823,54 @@ namespace FlexRouter
         private void TurnControlsSynchronizationOffChecked(object sender, RoutedEventArgs e)
         {
             ApplicationSettings.ControlsSynchronizationIsOff = true;
+        }
+        /// <summary>
+        /// Перечитать список подключенных устройств (вызывается после включения/выключения
+        /// устройств галочками в Settings)
+        /// </summary>
+        private void RefreshConnectedDevicesList()
+        {
+            ConnectedDevicesList.Items.Clear();
+            foreach (var device in HardwareManager.GetConnectedDevices())
+                ConnectedDevicesList.Items.Add(device);
+            ApplySearchFilter(false);
+        }
+
+        private void ArccUsbEnabledChecked(object sender, RoutedEventArgs e)
+        {
+            ApplicationSettings.ArccUsbEnabled = true;
+            HardwareManager.ApplyDeviceToggles();
+            RefreshConnectedDevicesList();
+        }
+        private void ArccUsbEnabledUnchecked(object sender, RoutedEventArgs e)
+        {
+            ApplicationSettings.ArccUsbEnabled = false;
+            HardwareManager.ApplyDeviceToggles();
+            RefreshConnectedDevicesList();
+        }
+        private void ArccNetEnabledChecked(object sender, RoutedEventArgs e)
+        {
+            ApplicationSettings.ArccNetEnabled = true;
+            HardwareManager.ApplyDeviceToggles();
+            RefreshConnectedDevicesList();
+        }
+        private void ArccNetEnabledUnchecked(object sender, RoutedEventArgs e)
+        {
+            ApplicationSettings.ArccNetEnabled = false;
+            HardwareManager.ApplyDeviceToggles();
+            RefreshConnectedDevicesList();
+        }
+        private void KeyboardEnabledChecked(object sender, RoutedEventArgs e)
+        {
+            ApplicationSettings.KeyboardEnabled = true;
+            HardwareManager.ApplyDeviceToggles();
+            RefreshConnectedDevicesList();
+        }
+        private void KeyboardEnabledUnchecked(object sender, RoutedEventArgs e)
+        {
+            ApplicationSettings.KeyboardEnabled = false;
+            HardwareManager.ApplyDeviceToggles();
+            RefreshConnectedDevicesList();
         }
         private void _joystickBindByInstanceGuid_Checked(object sender, RoutedEventArgs e)
         {

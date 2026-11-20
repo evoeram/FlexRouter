@@ -15,15 +15,30 @@ namespace FlexRouter.Hardware
     {
         static private readonly List<IHardware> Hardwares = new List<IHardware>();
         /// <summary>
+        /// Ссылки на менеджеры, у которых есть галочки включения/выключения в Settings
+        /// </summary>
+        static private readonly ArccDevicesManager ArccManager = new ArccDevicesManager();
+        static private readonly KeyboardDevicesManager KeyboardManager = new KeyboardDevicesManager();
+        /// <summary>
         /// В конструкторе добавляются классы железа, которое будет обрабатываться роутром
         /// </summary>
         static HardwareManager()
         {
             _searchTimer = new Timer(_ => OnTimedEvent(null, null), null, 500, 500);
-            Hardwares.Add(new ArccDevicesManager());
+            Hardwares.Add(ArccManager);
             Hardwares.Add(new JoystickDevicesManager());
-            Hardwares.Add(new KeyboardDevicesManager());
+            Hardwares.Add(KeyboardManager);
             Hardwares.Add(new F3DevicesManager());
+        }
+        /// <summary>
+        /// Применить галочки включения/выключения устройств из Settings (ARCC USB, ARCC Net, клавиатура).
+        /// Вызывается при старте и при переключении галочек
+        /// </summary>
+        static public void ApplyDeviceToggles()
+        {
+            ArccManager.SetUsbEnabled(ApplicationSettings.ArccUsbEnabled);
+            ArccManager.SetNetEnabled(ApplicationSettings.ArccNetEnabled);
+            KeyboardManager.SetEnabled(ApplicationSettings.KeyboardEnabled);
         }
         #region Поиск компонентов
         /// <summary>

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Management;
@@ -87,9 +88,102 @@ namespace FlexRouter.Hardware.Arcc
             new Regex(@"VID_1A86&PID_55D3", RegexOptions.IgnoreCase),
         };
 
+        private bool _usbEnabled = true;
+        private bool _netEnabled = true;
+
         public override bool Connect()
         {
             var foundDevices = new Dictionary<string, ArccDevice>();
+            if (_usbEnabled)
+            {
+                FindFtdiArccDevices(foundDevices);
+                // Поиск ARCC-совместимых устройств на нативном USB / CH343 (ESP32 и т.п.)
+                foreach (var usbDevice in FindCompatibleUsbSerialDevices())
+                {
+                    if (foundDevices.ContainsKey(usbDevice.Key))
+                        continue;
+                    var device = new ArccDevice(usbDevice.Key, usbDevice.Value);
+                    foundDevices.Add(usbDevice.Key, device);
+                }
+                foreach (var arccDevice in foundDevices)
+                {
+                    if (Devices.ContainsKey(arccDevice.Key))
+                        continue;
+                    if (arccDevice.Value.Connect())
+                        Devices.Add(arccDevice.Key, arccDevice.Value);
+                }
+            }
+            // ARCC-устройства в сети (TCP): список адресов задаётся в файле ArccNetDevices.txt рядом с FlexRouter.exe
+            // Формат файла: одна строка - один адрес "host:port" (например 192.168.4.1:4001),
+            // строки, начинающиеся с #, - комментарии. НОТ: пробелы вокруг адреса допускаются.
+            ConnectNetDevices();
+            return true;
+        }
+
+        /// <summary>
+        /// Включить/выключить USB-устройства ARCC (галочка в Settings).
+        /// При выключении подключенные USB-устройства отключаются, при включении - ищутся заново
+        /// </summary>
+        public void SetUsbEnabled(bool enabled)
+        {
+            if (_usbEnabled == enabled)
+                return;
+            _usbEnabled = enabled;
+            if (!enabled)
+            {
+                DisconnectByIdPrefix(DevicePrefix + ":USB_");
+                return;
+            }
+            var foundDevices = new Dictionary<string, ArccDevice>();
+            FindFtdiArccDevices(foundDevices);
+            foreach (var usbDevice in FindCompatibleUsbSerialDevices())
+            {
+                if (foundDevices.ContainsKey(usbDevice.Key))
+                    continue;
+                foundDevices.Add(usbDevice.Key, new ArccDevice(usbDevice.Key, usbDevice.Value));
+            }
+            foreach (var arccDevice in foundDevices)
+            {
+                if (Devices.ContainsKey(arccDevice.Key))
+                    continue;
+                if (arccDevice.Value.Connect())
+                    Devices.Add(arccDevice.Key, arccDevice.Value);
+            }
+        }
+
+        /// <summary>
+        /// Включить/выключить сетевые устройства ARCC (галочка в Settings).
+        /// При выключении подключенные TCP-устройства отключаются, при включении - соединяются заново
+        /// </summary>
+        public void SetNetEnabled(bool enabled)
+        {
+            if (_netEnabled == enabled)
+                return;
+            _netEnabled = enabled;
+            if (enabled)
+                ConnectNetDevices();
+            else
+                DisconnectByIdPrefix(DevicePrefix + ":NET_");
+        }
+
+        /// <summary>
+        /// Отключить и удалить из списка устройства с идентификатором, начинающимся с префикса
+        /// </summary>
+        private void DisconnectByIdPrefix(string prefix)
+        {
+            var keys = Devices.Keys.Where(k => k.StartsWith(prefix)).ToList();
+            foreach (var key in keys)
+            {
+                Devices[key].Disconnect();
+                Devices.Remove(key);
+            }
+        }
+
+        /// <summary>
+        /// Найти классические ARCC-материнские платы на FTDI и добавить их в foundDevices
+        /// </summary>
+        private void FindFtdiArccDevices(Dictionary<string, ArccDevice> foundDevices)
+        {
             try
             {
                 var myFtdiDevice = new FTDI();
@@ -97,18 +191,18 @@ namespace FlexRouter.Hardware.Arcc
 
                 var ftStatus = myFtdiDevice.GetNumberOfDevices(ref ftdiDeviceCount);
                 if (ftStatus != FTDI.FT_STATUS.FT_OK)
-                    return FindAndConnectCompatibleDevices(foundDevices);
+                    return;
                 var ftdiDeviceList = new FTDI.FT_DEVICE_INFO_NODE[ftdiDeviceCount];
                 ftStatus = myFtdiDevice.GetDeviceList(ftdiDeviceList);
                 if (ftStatus != FTDI.FT_STATUS.FT_OK)
-                    return FindAndConnectCompatibleDevices(foundDevices);
+                    return;
 
                 for (var i = 0; i < ftdiDeviceList.Length; i++)
                 {
                     const string descriptionPattern = "ARCC";
                     if (!ftdiDeviceList[i].Description.StartsWith(descriptionPattern))
                         continue;
-                    ftStatus = myFtdiDevice.OpenByIndex((uint) i);
+                    ftStatus = myFtdiDevice.OpenByIndex((uint)i);
                     if (ftStatus != FTDI.FT_STATUS.FT_OK)
                         continue;
 
@@ -122,37 +216,76 @@ namespace FlexRouter.Hardware.Arcc
                     myFtdiDevice.Close();
                     FTChipID.ChipID.GetDeviceChipID(i, ref chipId);
                     var id = DevicePrefix + ":" + chipId.ToString("X");
+                    if (foundDevices.ContainsKey(id))
+                        continue;
                     var device = new ArccDevice(id, comPort);
                     foundDevices.Add(id, device);
                 }
             }
             catch (Exception)
             {
-                return FindAndConnectCompatibleDevices(foundDevices);
             }
-            // Поиск ARCC-совместимых устройств на нативном USB / CH343 (ESP32 и т.п.)
-            return FindAndConnectCompatibleDevices(foundDevices);
         }
 
         /// <summary>
-        /// Добавить к найденным FTDI-устройствам ARCC-совместимые USB-COM устройства (ESP32 и т.п.)
-        /// и подключиться ко всем найденным
+        /// Подключиться к ARCC-устройствам по сети (TCP). Адреса берутся из файла ArccNetDevices.txt
+        /// рядом с FlexRouter.exe. Устройства регистрируются всегда: при недоступности платы
+        /// ArccNetDevice сам продолжает попытки соединения в фоне.
+        /// Идентификатор устройства: Arcc:NET_&lt;host&gt;_&lt;port&gt;
         /// </summary>
-        private bool FindAndConnectCompatibleDevices(Dictionary<string, ArccDevice> foundDevices)
+        private void ConnectNetDevices()
         {
-            foreach (var usbDevice in FindCompatibleUsbSerialDevices())
+            if (!_netEnabled)
+                return;
+            foreach (var address in FindNetDeviceAddresses())
             {
-                if (foundDevices.ContainsKey(usbDevice.Key))
+                var parts = address.Split(':');
+                if (parts.Length != 2)
                     continue;
-                var device = new ArccDevice(usbDevice.Key, usbDevice.Value);
-                foundDevices.Add(usbDevice.Key, device);
+                var host = parts[0].Trim();
+                int port;
+                if (!int.TryParse(parts[1].Trim(), out port) || port <= 0 || port > 65535)
+                {
+                    Debug.Print("ARCC NET: bad address in ArccNetDevices.txt: " + address);
+                    continue;
+                }
+                var id = DevicePrefix + ":NET_" + host + "_" + port;
+                if (Devices.ContainsKey(id))
+                    continue;
+                var device = new ArccNetDevice(id, host, port);
+                device.Connect();
+                Devices.Add(id, device);
+                Debug.Print("ARCC NET device added: " + id);
             }
-            foreach (var arccDevice in foundDevices)
+        }
+
+        /// <summary>
+        /// Прочитать список адресов сетевых ARCC-устройств из ArccNetDevices.txt рядом с FlexRouter.exe
+        /// </summary>
+        private static IEnumerable<string> FindNetDeviceAddresses()
+        {
+            var result = new List<string>();
+            try
             {
-                if (arccDevice.Value.Connect())
-                    Devices.Add(arccDevice.Key, arccDevice.Value);
+                var exePath = System.Reflection.Assembly.GetEntryAssembly().Location;
+                if (string.IsNullOrEmpty(exePath))
+                    return result;
+                var fileName = Path.Combine(Path.GetDirectoryName(exePath), "ArccNetDevices.txt");
+                if (!File.Exists(fileName))
+                    return result;
+                foreach (var line in File.ReadAllLines(fileName))
+                {
+                    var trimmed = line.Trim();
+                    if (trimmed.Length == 0 || trimmed.StartsWith("#"))
+                        continue;
+                    result.Add(trimmed);
+                }
             }
-            return true;
+            catch (Exception ex)
+            {
+                Debug.Print("ARCC NET: failed to read ArccNetDevices.txt: " + ex.Message);
+            }
+            return result;
         }
 
         /// <summary>

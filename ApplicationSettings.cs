@@ -18,6 +18,10 @@ namespace FlexRouter
         static ApplicationSettings()
         {
             SettingsLocation = Assembly.GetEntryAssembly().Location + ".ini";
+            // По умолчанию все устройства включены (если файла настроек ещё нет)
+            ArccUsbEnabled = true;
+            ArccNetEnabled = true;
+            KeyboardEnabled = true;
         }
 
         public static string DefaultProfile { get; set; }
@@ -25,6 +29,18 @@ namespace FlexRouter
         public static bool ControlsSynchronizationIsOff { get; set; }
         public static bool JoystickBindByInstanceGuid { get; set; }
         public static bool DisablePersonalProfile { get; set; }
+        /// <summary>
+        /// Включено ли устройство ARCC по USB (CDC/FTDI). Галочка в Settings
+        /// </summary>
+        public static bool ArccUsbEnabled { get; set; }
+        /// <summary>
+        /// Включено ли устройство ARCC по сети (TCP, ArccNetDevices.txt). Галочка в Settings
+        /// </summary>
+        public static bool ArccNetEnabled { get; set; }
+        /// <summary>
+        /// Включена ли клавиатура (DirectInput). Галочка в Settings
+        /// </summary>
+        public static bool KeyboardEnabled { get; set; }
 
         public static bool LoadSettings()
         {
@@ -50,6 +66,10 @@ namespace FlexRouter
                 ControlsSynchronizationIsOff = settingsNav.Current.GetAttribute("ControlsSynchronizationIsOff", settingsNav.Current.NamespaceURI).ToLower().Contains("true");
                 JoystickBindByInstanceGuid = settingsNav.Current.GetAttribute("JoystickBindByInstanceGuid", settingsNav.Current.NamespaceURI).ToLower().Contains("true");
                 DisablePersonalProfile = settingsNav.Current.GetAttribute("DisablePersonalProfile", settingsNav.Current.NamespaceURI).ToLower().Contains("false");
+                // Устройства: по умолчанию включены (в старых настройках атрибутов нет)
+                ArccUsbEnabled = !settingsNav.Current.GetAttribute("ArccUsbEnabled", settingsNav.Current.NamespaceURI).ToLower().Contains("false");
+                ArccNetEnabled = !settingsNav.Current.GetAttribute("ArccNetEnabled", settingsNav.Current.NamespaceURI).ToLower().Contains("false");
+                KeyboardEnabled = !settingsNav.Current.GetAttribute("KeyboardEnabled", settingsNav.Current.NamespaceURI).ToLower().Contains("false");
                 return true;
             }
             catch (Exception)
@@ -77,7 +97,10 @@ namespace FlexRouter
                         writer.WriteAttributeString("DefaultLanguage", DefaultLanguage);
                         writer.WriteAttributeString("ControlsSynchronizationIsOff", ControlsSynchronizationIsOff.ToString());
                         writer.WriteAttributeString("JoystickBindByInstanceGuid", JoystickBindByInstanceGuid.ToString());
-                        writer.WriteAttributeString("DisablePersonalProfile", JoystickBindByInstanceGuid.ToString());
+                        writer.WriteAttributeString("DisablePersonalProfile", DisablePersonalProfile.ToString());
+                        writer.WriteAttributeString("ArccUsbEnabled", ArccUsbEnabled.ToString());
+                        writer.WriteAttributeString("ArccNetEnabled", ArccNetEnabled.ToString());
+                        writer.WriteAttributeString("KeyboardEnabled", KeyboardEnabled.ToString());
                         writer.WriteEndElement();
                         writer.WriteEndElement();
                         writer.WriteEndDocument();

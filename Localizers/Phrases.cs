@@ -201,6 +201,10 @@ namespace FlexRouter.Localizers
         MapFileUISelectCsvFileToSave,
         MapFileUIGroup,
         MapFileUIModeInitializeVarNames,
-        MapFileUIModeUpdateVarOffsets
+        MapFileUIModeUpdateVarOffsets,
+        SettingsArccUsbDevice,
+        SettingsArccNetDevice,
+        SettingsKeyboardDevice,
+        CommonSearchHint
     }
 }
